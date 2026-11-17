@@ -12,6 +12,9 @@ combine it with another commissioner at the application layer.
 - `commission(...)`: Google-only commissioning. No handoff is exposed.
 - `startHandoffSession(...)`: Google commissioning plus an in-memory handoff
   containing the operational address, port, passcode, and product metadata.
+- `requestModuleInstall()`: proactively asks Google Play Services to deliver
+  the optional Home module when `checkAvailability()` reports
+  `moduleUnavailable`.
 - Two explicit targets:
   - `googleHomeFabric`: adds the device to the Google Home ecosystem.
   - `androidLocalFabric`: uses Google Play Services' Android local fabric.
@@ -34,10 +37,11 @@ than a production Google Home cloud deployment.
 - The Home APIs 1.11.1 Android SDK artifacts from Google.
 
 The plugin declares the Play Services package-visibility queries and depends on
-`play-services-home`; its manifest contributes the required `home:0:preferred`
-module-dependency service to the host app during manifest merging.
-`checkAvailability()` also verifies that the Play Services Home module is
-already installed and returns `moduleUnavailable` while delivery is pending.
+`play-services-home`; the `play-services-home` artifact's manifest contributes
+the required `home:0:preferred` module-dependency service to the host app
+during manifest merging. `checkAvailability()` also verifies that the Play
+Services Home module is already installed and returns `moduleUnavailable`
+while delivery is pending.
 
 ## Install
 
@@ -115,6 +119,17 @@ final result = await commissioner.commission(
 
 `target` is intentionally required. Choose `androidLocalFabric` only when a
 local Google-managed development fabric is acceptable.
+
+When `checkAvailability()` returns `moduleUnavailable`, the Home module has not
+been delivered yet. Delivery normally completes in the background while the
+device is online. To speed this up, call `requestModuleInstall()` to ask
+Google Play Services to deliver the module immediately, then re-check
+availability:
+
+```dart
+final install = await commissioner.requestModuleInstall();
+// install.alreadyInstalled reports whether the module was already present.
+```
 
 ## Handoff session
 

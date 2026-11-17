@@ -11,8 +11,11 @@
 ## Required checks
 
 1. Availability returns `ready`.
-   If it returns `moduleUnavailable`, keep the device online until Play Services
-   finishes delivering the Home module, then retry.
+   If it returns `moduleUnavailable`, call `requestModuleInstall()` to ask
+   Play Services to deliver the Home module immediately (or keep the device
+   online and wait for background delivery), then retry availability.
+   A checker timeout reports `unknown` instead of `moduleUnavailable` and can
+   simply be retried.
 2. `commission(androidLocalFabric)` completes with a real commissionee.
 3. `startHandoffSession(androidLocalFabric)` emits a handoff with a reachable
    address, positive port, and passcode.

@@ -85,6 +85,35 @@ class GoogleHomeMatterAvailability {
   }
 }
 
+/// Result of requesting immediate delivery of the Play Services Home module.
+class GoogleHomeMatterModuleInstallResult {
+  const GoogleHomeMatterModuleInstallResult({
+    required this.alreadyInstalled,
+    this.sessionId,
+  });
+
+  factory GoogleHomeMatterModuleInstallResult.fromMap(
+    Map<String, Object?> map,
+  ) {
+    return GoogleHomeMatterModuleInstallResult(
+      alreadyInstalled: map['alreadyInstalled'] == true,
+      sessionId: map['sessionId'] as int?,
+    );
+  }
+
+  /// Whether the Home module was already installed on this device.
+  final bool alreadyInstalled;
+
+  /// Google Play Services module-install session id, when delivery started.
+  final int? sessionId;
+
+  @override
+  String toString() {
+    return 'GoogleHomeMatterModuleInstallResult('
+        'alreadyInstalled: $alreadyInstalled, sessionId: $sessionId)';
+  }
+}
+
 /// Stages where a Google Home Matter operation can fail.
 enum GoogleHomeMatterFailureStage {
   availability('availability'),

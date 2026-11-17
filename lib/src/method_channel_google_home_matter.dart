@@ -28,6 +28,13 @@ class MethodChannelGoogleHomeMatter extends GoogleHomeMatterPlatform {
   }
 
   @override
+  Future<Map<String, Object?>> requestModuleInstall() async {
+    return _asStringMap(
+      await channel.invokeMethod<Object?>('requestModuleInstall'),
+    );
+  }
+
+  @override
   Future<Map<String, Object?>> commission({
     required String onboardingPayload,
     required String target,

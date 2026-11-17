@@ -31,6 +31,33 @@ internal object GoogleHomeMatterAvailabilityChecker {
         context: Context,
         onResult: (GoogleHomeMatterAvailabilityResult) -> Unit,
     ) {
+        try {
+            checkInternal(context, onResult)
+        } catch (error: Throwable) {
+            onResult(
+                result(
+                    status = "sdkUnavailable",
+                    message = "Unable to check Google Play Services availability: " +
+                        (error.javaClass.simpleName),
+                    playServicesVersion = installedPlayServicesVersion(context),
+                )
+            )
+        }
+    }
+
+    fun timeoutResult(): GoogleHomeMatterAvailabilityResult =
+        GoogleHomeMatterAvailabilityResult(
+            isReady = false,
+            status = "unknown",
+            message = "Timed out checking the Google Play Services Home module availability.",
+            playServicesVersion = null,
+            minimumPlayServicesVersion = MINIMUM_PLAY_SERVICES_VERSION,
+        )
+
+    private fun checkInternal(
+        context: Context,
+        onResult: (GoogleHomeMatterAvailabilityResult) -> Unit,
+    ) {
         val playServicesVersion = installedPlayServicesVersion(context)
 
         if (Build.VERSION.SDK_INT < MINIMUM_ANDROID_API) {
@@ -75,29 +102,28 @@ internal object GoogleHomeMatterAvailabilityChecker {
             return
         }
 
-        val readyResult = try {
+        val commissioningClient = try {
             Matter.getCommissioningClient(context)
-            result(
-                isReady = true,
-                status = "ready",
-                message = "Google Home Matter commissioning is available.",
-                playServicesVersion = playServicesVersion,
-            )
         } catch (error: Throwable) {
-            result(
-                status = "sdkUnavailable",
-                message = "Google Home commissioning SDK is unavailable: " +
-                    (error.javaClass.simpleName),
-                playServicesVersion = playServicesVersion,
+            onResult(
+                result(
+                    status = "sdkUnavailable",
+                    message = "Google Home commissioning SDK is unavailable: " +
+                        (error.javaClass.simpleName),
+                    playServicesVersion = playServicesVersion,
+                )
             )
-        }
-        if (!readyResult.isReady) {
-            onResult(readyResult)
             return
         }
 
+        val readyResult = result(
+            isReady = true,
+            status = "ready",
+            message = "Google Home Matter commissioning is available.",
+            playServicesVersion = playServicesVersion,
+        )
+
         try {
-            val commissioningClient = Matter.getCommissioningClient(context)
             ModuleInstall.getClient(context)
                 .areModulesAvailable(commissioningClient)
                 .addOnSuccessListener { moduleAvailability ->
@@ -136,17 +162,26 @@ internal object GoogleHomeMatterAvailabilityChecker {
     }
 
     fun compareVersions(left: String, right: String): Int {
-        val leftParts = left.split('.')
-        val rightParts = right.split('.')
+        val leftParts = numericVersionParts(left)
+        val rightParts = numericVersionParts(right)
         val count = maxOf(leftParts.size, rightParts.size)
         for (index in 0 until count) {
-            val leftPart = leftParts.getOrNull(index)?.toIntOrNull() ?: 0
-            val rightPart = rightParts.getOrNull(index)?.toIntOrNull() ?: 0
+            val leftPart = leftParts.getOrNull(index) ?: 0
+            val rightPart = rightParts.getOrNull(index) ?: 0
             if (leftPart != rightPart) {
                 return leftPart.compareTo(rightPart)
             }
         }
         return 0
+    }
+
+    private fun numericVersionParts(version: String): List<Int> {
+        val numericPrefix = Regex("""^(\d+(?:\.\d+)*)""")
+            .find(version.trim())
+            ?.groupValues
+            ?.get(1)
+            ?: return emptyList()
+        return numericPrefix.split('.').map { it.toIntOrNull() ?: 0 }
     }
 
     private fun installedPlayServicesVersion(context: Context): String? {

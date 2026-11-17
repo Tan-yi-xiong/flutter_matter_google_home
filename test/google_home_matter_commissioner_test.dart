@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_matter_google_home/flutter_matter_google_home.dart';
 import 'package:flutter_matter_google_home/src/method_channel_google_home_matter.dart';
@@ -41,6 +42,23 @@ class FakeGoogleHomeMatterPlatform
 
   @override
   Future<Map<String, Object?>> checkAvailability() async => availability;
+
+  Map<String, Object?> moduleInstallResult = <String, Object?>{
+    'alreadyInstalled': false,
+    'sessionId': 7,
+  };
+  Object? moduleInstallError;
+  int moduleInstallCalls = 0;
+
+  @override
+  Future<Map<String, Object?>> requestModuleInstall() async {
+    moduleInstallCalls += 1;
+    final error = moduleInstallError;
+    if (error != null) {
+      throw error;
+    }
+    return moduleInstallResult;
+  }
 
   @override
   Future<Map<String, Object?>> commission({
@@ -131,6 +149,73 @@ void main() {
     expect(
       availability.status,
       GoogleHomeMatterAvailabilityStatus.moduleUnavailable,
+    );
+  });
+
+  test('requests immediate Home module delivery', () async {
+    final result = await commissioner.requestModuleInstall();
+
+    expect(result.alreadyInstalled, isFalse);
+    expect(result.sessionId, 7);
+    expect(platform.moduleInstallCalls, 1);
+  });
+
+  test('module install is Android-only', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+    await expectLater(
+      commissioner.requestModuleInstall(),
+      throwsA(
+        isA<GoogleHomeMatterException>().having(
+          (error) => error.stage,
+          'stage',
+          GoogleHomeMatterFailureStage.availability,
+        ),
+      ),
+    );
+    expect(platform.moduleInstallCalls, 0);
+  });
+
+  test('maps module install platform failures to availability stage', () async {
+    platform.moduleInstallError = PlatformException(
+      code: 'GOOGLE_HOME_MATTER_REQUEST_FAILED',
+      message: 'Unable to request the Play Services Home module.',
+      details: <String, Object?>{
+        'stage': 'availability',
+        'message': 'Unable to request the Play Services Home module.',
+      },
+    );
+
+    await expectLater(
+      commissioner.requestModuleInstall(),
+      throwsA(
+        isA<GoogleHomeMatterException>().having(
+          (error) => error.stage,
+          'stage',
+          GoogleHomeMatterFailureStage.availability,
+        ),
+      ),
+    );
+  });
+
+  test('wraps unexpected module install failures', () async {
+    platform.moduleInstallError = StateError('boom');
+
+    await expectLater(
+      commissioner.requestModuleInstall(),
+      throwsA(
+        isA<GoogleHomeMatterException>()
+            .having(
+              (error) => error.stage,
+              'stage',
+              GoogleHomeMatterFailureStage.availability,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              'Unable to request the Google Play Services Home module.',
+            ),
+      ),
     );
   });
 

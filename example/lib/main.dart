@@ -70,6 +70,17 @@ class _CommissioningExamplePageState extends State<CommissioningExamplePage> {
     });
   }
 
+  Future<void> _requestModuleInstall() async {
+    await _run(() async {
+      final response = await _commissioner.requestModuleInstall();
+      _setStatus(
+        'Home module install requested: '
+        'alreadyInstalled=${response.alreadyInstalled}'
+        '${response.sessionId == null ? '' : ', sessionId=${response.sessionId}'}',
+      );
+    });
+  }
+
   Future<void> _startHandoffSession() async {
     final target = _target;
     if (target == null) {
@@ -172,9 +183,9 @@ class _CommissioningExamplePageState extends State<CommissioningExamplePage> {
           const SizedBox(height: 12),
           TextField(
             controller: _payloadController,
-            obscureText: true,
             enableSuggestions: false,
             autocorrect: false,
+            maxLines: 1,
             decoration: const InputDecoration(
               labelText: 'Matter onboarding payload',
               border: OutlineInputBorder(),
@@ -214,6 +225,10 @@ class _CommissioningExamplePageState extends State<CommissioningExamplePage> {
               FilledButton.tonal(
                 onPressed: _busy ? null : _checkAvailability,
                 child: const Text('Check availability'),
+              ),
+              FilledButton.tonal(
+                onPressed: _busy ? null : _requestModuleInstall,
+                child: const Text('Prepare Home module'),
               ),
               FilledButton(
                 onPressed: _busy || _target == null ? null : _commissionOnly,

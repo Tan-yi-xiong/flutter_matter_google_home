@@ -45,6 +45,7 @@ class FlutterMatterGoogleHomePlugin :
         val arguments = call.arguments as? Map<*, *>
         when (call.method) {
             "checkAvailability" -> coordinator.checkAvailability(result)
+            "requestModuleInstall" -> coordinator.requestModuleInstall(result)
             "commission" -> coordinator.commission(
                 onboardingPayload = arguments?.get("onboardingPayload") as? String,
                 targetWireName = arguments?.get("target") as? String,

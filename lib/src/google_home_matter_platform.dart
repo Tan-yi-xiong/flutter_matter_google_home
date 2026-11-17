@@ -22,6 +22,9 @@ abstract class GoogleHomeMatterPlatform extends PlatformInterface {
 
   Future<Map<String, Object?>> checkAvailability();
 
+  /// Requests immediate delivery of the Play Services Home module.
+  Future<Map<String, Object?>> requestModuleInstall();
+
   Future<Map<String, Object?>> commission({
     required String onboardingPayload,
     required String target,

@@ -7,6 +7,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.android.gms.home.matter.Matter
 import com.google.android.gms.home.matter.commissioning.CommissioningCompleteMetadata
 import com.google.android.gms.home.matter.commissioning.CommissioningRequest
@@ -15,6 +17,7 @@ import com.google.android.gms.home.matter.commissioning.CommissioningResult
 import com.google.android.gms.home.matter.commissioning.CommissioningService
 import com.google.android.gms.home.matter.commissioning.CommissioningService.CommissioningError
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 internal object GoogleHomeMatterRuntime {
@@ -30,6 +33,7 @@ internal class GoogleHomeMatterCoordinator(
         const val TAG = "GoogleHomeMatter"
         const val FIRST_REQUEST_CODE = 42000
         const val LAST_REQUEST_CODE = 65000
+        const val SERVICE_CALL_TIMEOUT_MS = 15_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -65,8 +69,75 @@ internal class GoogleHomeMatterCoordinator(
     }
 
     fun checkAvailability(result: MethodChannel.Result) {
+        val completed = AtomicBoolean(false)
+        val timeout = Runnable {
+            if (completed.compareAndSet(false, true)) {
+                result.success(GoogleHomeMatterAvailabilityChecker.timeoutResult().toMap())
+            }
+        }
+        mainHandler.postDelayed(timeout, SERVICE_CALL_TIMEOUT_MS)
         GoogleHomeMatterAvailabilityChecker.check(applicationContext) { availability ->
-            result.success(availability.toMap())
+            if (completed.compareAndSet(false, true)) {
+                mainHandler.removeCallbacks(timeout)
+                result.success(availability.toMap())
+            }
+        }
+    }
+
+    fun requestModuleInstall(result: MethodChannel.Result) {
+        mainHandler.post {
+            val completed = AtomicBoolean(false)
+            val timeout = Runnable {
+                if (completed.compareAndSet(false, true)) {
+                    respondError(
+                        result,
+                        GoogleHomeMatterErrorCodes.REQUEST_FAILED,
+                        "Timed out requesting the Play Services Home module.",
+                        "availability",
+                    )
+                }
+            }
+            mainHandler.postDelayed(timeout, SERVICE_CALL_TIMEOUT_MS)
+            try {
+                val request = ModuleInstallRequest.newBuilder()
+                    .addApi(Matter.getCommissioningClient(applicationContext))
+                    .build()
+                ModuleInstall.getClient(applicationContext)
+                    .installModules(request)
+                    .addOnSuccessListener { response ->
+                        if (completed.compareAndSet(false, true)) {
+                            mainHandler.removeCallbacks(timeout)
+                            result.success(
+                                mapOf(
+                                    "alreadyInstalled" to response.areModulesAlreadyInstalled(),
+                                    "sessionId" to response.sessionId,
+                                )
+                            )
+                        }
+                    }
+                    .addOnFailureListener { error ->
+                        if (completed.compareAndSet(false, true)) {
+                            mainHandler.removeCallbacks(timeout)
+                            respondError(
+                                result,
+                                GoogleHomeMatterErrorCodes.REQUEST_FAILED,
+                                "Unable to request the Play Services Home module.",
+                                "availability",
+                            )
+                            Log.w(TAG, "Home module install request failed: ${error.javaClass.simpleName}")
+                        }
+                    }
+            } catch (_: Throwable) {
+                if (completed.compareAndSet(false, true)) {
+                    mainHandler.removeCallbacks(timeout)
+                    respondError(
+                        result,
+                        GoogleHomeMatterErrorCodes.REQUEST_FAILED,
+                        "Unable to request the Play Services Home module.",
+                        "availability",
+                    )
+                }
+            }
         }
     }
 
@@ -376,10 +447,27 @@ internal class GoogleHomeMatterCoordinator(
         onStarted: (() -> Unit)? = null,
         onFailed: (() -> Unit)? = null,
     ) {
+        val completed = AtomicBoolean(false)
+        val timeout = Runnable {
+            if (completed.compareAndSet(false, true)) {
+                onFailed?.invoke()
+                respondError(
+                    channelResult,
+                    GoogleHomeMatterErrorCodes.REQUEST_FAILED,
+                    "Timed out waiting for Google Play Services commissioning.",
+                    "request",
+                )
+            }
+        }
+        mainHandler.postDelayed(timeout, SERVICE_CALL_TIMEOUT_MS)
         try {
             Matter.getCommissioningClient(applicationContext)
                 .commissionDevice(request)
                 .addOnSuccessListener { sender ->
+                    if (!completed.compareAndSet(false, true)) {
+                        return@addOnSuccessListener
+                    }
+                    mainHandler.removeCallbacks(timeout)
                     try {
                         hostActivity.startIntentSenderForResult(sender, requestCode, null, 0, 0, 0)
                         onStarted?.invoke()
@@ -398,6 +486,10 @@ internal class GoogleHomeMatterCoordinator(
                     }
                 }
                 .addOnFailureListener { error ->
+                    if (!completed.compareAndSet(false, true)) {
+                        return@addOnFailureListener
+                    }
+                    mainHandler.removeCallbacks(timeout)
                     onFailed?.invoke()
                     val apiError = error as? ApiException
                     respondError(
@@ -409,13 +501,16 @@ internal class GoogleHomeMatterCoordinator(
                     )
                 }
         } catch (_: Throwable) {
-            onFailed?.invoke()
-            respondError(
-                channelResult,
-                GoogleHomeMatterErrorCodes.REQUEST_FAILED,
-                "Unable to start Google commissioning.",
-                "request",
-            )
+            if (completed.compareAndSet(false, true)) {
+                mainHandler.removeCallbacks(timeout)
+                onFailed?.invoke()
+                respondError(
+                    channelResult,
+                    GoogleHomeMatterErrorCodes.REQUEST_FAILED,
+                    "Unable to start Google commissioning.",
+                    "request",
+                )
+            }
         }
     }
 

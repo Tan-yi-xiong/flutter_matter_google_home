@@ -28,6 +28,9 @@ void main() {
             'startHandoffSession' => <String, Object?>{
               'sessionId': 'session-1',
             },
+            'requestModuleInstall' => <String, Object?>{
+              'alreadyInstalled': true,
+            },
             'completeHandoff' => null,
             _ => null,
           };
@@ -82,5 +85,13 @@ void main() {
       'succeeded': false,
       'errorCode': 9,
     });
+  });
+
+  test('maps requestModuleInstall method calls', () async {
+    final result = await platform.requestModuleInstall();
+
+    expect(result, <String, Object?>{'alreadyInstalled': true});
+    expect(calls.last.method, 'requestModuleInstall');
+    expect(calls.last.arguments, isNull);
   });
 }

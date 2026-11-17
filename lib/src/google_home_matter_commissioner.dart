@@ -40,6 +40,27 @@ class GoogleHomeMatterCommissioner {
     }
   }
 
+  /// Requests immediate delivery of the Google Play Services Home module.
+  ///
+  /// Use this when [checkAvailability] reports
+  /// [GoogleHomeMatterAvailabilityStatus.moduleUnavailable]. The request is
+  /// idempotent and does not participate in commissioning busy-state tracking.
+  Future<GoogleHomeMatterModuleInstallResult> requestModuleInstall() async {
+    _ensureAndroid();
+    try {
+      return GoogleHomeMatterModuleInstallResult.fromMap(
+        await _platform.requestModuleInstall(),
+      );
+    } on PlatformException catch (error) {
+      throw _mapPlatformException(error);
+    } catch (_) {
+      throw const GoogleHomeMatterException(
+        stage: GoogleHomeMatterFailureStage.availability,
+        message: 'Unable to request the Google Play Services Home module.',
+      );
+    }
+  }
+
   /// Runs Google commissioning without exposing a handoff or waiting for a
   /// second fabric.
   Future<GoogleHomeMatterResult> commission({
