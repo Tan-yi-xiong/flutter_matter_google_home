@@ -1,0 +1,25 @@
+def googleMatterSdkRepo = providers.gradleProperty('googleMatterSdkRepo')
+    .orElse(providers.environmentVariable('GOOGLE_MATTER_SDK_REPO'))
+    .orNull
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        if (googleMatterSdkRepo != null) {
+            maven { url = uri(googleMatterSdkRepo) }
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

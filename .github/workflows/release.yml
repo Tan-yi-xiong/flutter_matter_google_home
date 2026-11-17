@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: "true"
+  PUB_ENVIRONMENT: flutter_matter_google_home_release
+
+jobs:
+  release:
+    name: Validate and create GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          package_version="$(sed -nE 's/^version:[[:space:]]*([^[:space:]#]+).*/\1/p' pubspec.yaml | head -n1)"
+          test "${version}" = "${package_version}"
+
+      - name: Read Flutter version
+        shell: bash
+        run: |
+          version="$(jq -r '.flutter // empty' .fvmrc)"
+          test -n "${version}"
+          echo "FLUTTER_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Download Google Home Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/google-home-sdk"
+          curl -fsSL \
+            https://storage.googleapis.com/home_sdk_android/home.android.sdk_1_11_1.zip \
+            -o "${RUNNER_TEMP}/google-home-sdk/sdk.zip"
+          echo "9154ee88b3d93e7eafb85a1132043e281a14d1f60fc50913a4c230b34afafef4  ${RUNNER_TEMP}/google-home-sdk/sdk.zip" \
+            | sha256sum -c -
+          unzip -q "${RUNNER_TEMP}/google-home-sdk/sdk.zip" \
+            -d "${RUNNER_TEMP}/google-home-sdk/repo"
+          echo "GOOGLE_MATTER_SDK_REPO=${RUNNER_TEMP}/google-home-sdk/repo" >> "${GITHUB_ENV}"
+
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter test
+      - working-directory: example
+        run: flutter pub get
+      - working-directory: example
+        run: flutter test
+      - working-directory: example
+        run: flutter build apk --debug
+      - name: Verify merged Google Home manifest contract
+        working-directory: example
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="build/app/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"
+          test -f "${manifest}"
+          grep -q 'com.google.android.gms.metadata.ModuleDependencies' "${manifest}"
+          grep -q 'home:0:preferred' "${manifest}"
+          grep -q 'COMMISSION_DEVICE_TO_3P_FABRIC' "${manifest}"
+          grep -q 'BIND_COMMISSIONING_SERVICE' "${manifest}"
+      - working-directory: example/android
+        run: ./gradlew :flutter_matter_google_home:testDebugUnitTest --no-daemon
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="flutter_matter_google_home-${GITHUB_REF_NAME}.tar.gz"
+          git archive --format=tar.gz --prefix="flutter_matter_google_home-${GITHUB_REF_NAME}/" --output="${name}" HEAD
+          sha256sum "${name}" > "${name}.sha256"
+          echo "ARCHIVE=${name}" >> "${GITHUB_ENV}"
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --generate-notes \
+            "${ARCHIVE}" \
+            "${ARCHIVE}.sha256"
